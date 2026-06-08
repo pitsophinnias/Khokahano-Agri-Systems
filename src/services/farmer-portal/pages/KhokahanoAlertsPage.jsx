@@ -33,8 +33,19 @@ function formatDateTime(ts) {
   });
 }
 
-function minutesSince(ts) {
-  return Math.floor((Date.now() - ts) / 60000);
+function timeSince(ts) {
+  const totalMins = Math.floor((Date.now() - ts) / 60000);
+  if (totalMins < 1)  return "just now";
+  if (totalMins < 60) return `${totalMins} minute${totalMins === 1 ? "" : "s"} ago`;
+  const hrs  = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  if (hrs < 24) {
+    return mins > 0 ? `${hrs}h ${mins}m ago` : `${hrs} hour${hrs === 1 ? "" : "s"} ago`;
+  }
+  const days   = Math.floor(hrs / 24);
+  const remHrs = hrs % 24;
+  if (remHrs > 0) return `${days} day${days === 1 ? "" : "s"} & ${remHrs} hour${remHrs === 1 ? "" : "s"} ago`;
+  return `${days} day${days === 1 ? "" : "s"} ago`;
 }
 
 function AlertRow({ alert, onFollowUp }) {
@@ -42,7 +53,8 @@ function AlertRow({ alert, onFollowUp }) {
   const [note, setNote]         = useState(alert.followUpNote ?? "");
   const [editing, setEditing]   = useState(false);
   const title = typeof alert.productTitle === "object" ? alert.productTitle.en : alert.productTitle;
-  const overdueMins = minutesSince(alert.escalatedAt ?? alert.placedAt);
+  const overdueLabel = timeSince(alert.escalatedAt ?? alert.placedAt);
+  const overdueMins  = Math.floor((Date.now() - (alert.escalatedAt ?? alert.placedAt)) / 60000);
 
   const handleFollowUp = () => {
     onFollowUp(alert.id, note);
@@ -54,7 +66,7 @@ function AlertRow({ alert, onFollowUp }) {
     <div style={{
       background: followed ? C.white : "#fff5f5",
       border: `1px solid ${followed ? C.line : "#f5c6c6"}`,
-      borderLeft: `4px solid ${followed ? "#43a047" : C.redMid}`,
+
       borderRadius: 6, marginBottom: 8, overflow: "hidden",
     }}>
       {/* Header */}
@@ -98,7 +110,7 @@ function AlertRow({ alert, onFollowUp }) {
           <div style={{ fontSize: 12, color: C.inkLight, display: "flex", gap: 12, flexWrap: "wrap" }}>
             <span>📦 {alert.qty} units · M {alert.total?.toLocaleString()}</span>
             <span>👤 Buyer: {alert.buyer?.name}</span>
-            <span>⏱ Escalated {overdueMins}m ago</span>
+            <span>⏱ Escalated {overdueLabel}</span>
           </div>
 
           <div style={{ fontSize: 12, color: C.inkLight, marginTop: 3 }}>
@@ -113,7 +125,7 @@ function AlertRow({ alert, onFollowUp }) {
             color: overdueMins > 20 ? C.redMid : C.inkMid,
             textAlign: "right", flexShrink: 0,
           }}>
-            {overdueMins}m overdue
+            {overdueLabel}
           </div>
         )}
       </div>

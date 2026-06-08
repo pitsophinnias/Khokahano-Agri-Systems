@@ -26,11 +26,16 @@ function formatTime(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 function formatAge(ts) {
-  const mins = Math.floor((Date.now() - ts) / 60000);
-  if (mins < 1)  return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  return `${hrs}h ${mins % 60}m ago`;
+  const totalMins = Math.floor((Date.now() - ts) / 60000);
+  if (totalMins < 1)  return "just now";
+  if (totalMins < 60) return `${totalMins}m ago`;
+  const hrs  = Math.floor(totalMins / 60);
+  const mins = totalMins % 60;
+  if (hrs < 24) return mins > 0 ? `${hrs}h ${mins}m ago` : `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  const remHrs = hrs % 24;
+  if (remHrs > 0) return `${days}d ${remHrs}h ago`;
+  return `${days}d ago`;
 }
 
 const STATUS_MAP = {
@@ -69,7 +74,6 @@ export default function OrderCard({ order, lang = "en", onUpdateStatus }) {
       <div style={{
         background: C.white,
         border: `1px solid ${order.status === "escalated" ? "#ef9a9a" : C.line}`,
-        borderLeft: `4px solid ${cfg.dot}`,
         borderRadius: 6,
         overflow: "hidden",
       }}>
