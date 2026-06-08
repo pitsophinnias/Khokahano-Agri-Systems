@@ -1,14 +1,14 @@
 // ---------------------------------------------------------------------------
 // useLocation.js
 // Handles geolocation consent, coordinate resolution, and district mapping.
-// On first visit shows a consent banner. On consent, uses browser GPS.
-// Persists decision in localStorage so we only ask once.
+//
+// localStorage keys:
+//   kh_location_consent  — "granted" | "denied"
+//   kh_district          — resolved district name or "all"
+//   kh_location_enabled  — "true" | "false"  (user can toggle auto-filter off)
 // ---------------------------------------------------------------------------
 import { useState, useEffect, useCallback } from "react";
-import { DISTRICTS } from "../constants/theme.js";
 
-// Rough bounding boxes for each district (center lat/lng + tolerance).
-// These are approximate — good enough for auto-filtering without a geocoding API.
 const DISTRICT_BOUNDS = [
   { district: "Maseru",        latMin: -29.55, latMax: -29.15, lngMin: 27.30, lngMax: 27.65 },
   { district: "Leribe",        latMin: -28.70, latMax: -28.40, lngMin: 27.90, lngMax: 28.20 },
@@ -29,24 +29,28 @@ function coordsToDistrict(lat, lng) {
   return match ? match.district : null;
 }
 
-const STORAGE_KEY = "kh_location_consent"; // "granted" | "denied"
-const DISTRICT_KEY = "kh_district";
+const CONSENT_KEY = "kh_location_consent";   // "granted" | "denied"
+const DISTRICT_KEY = "kh_district";           // resolved district or "all"
+const ENABLED_KEY  = "kh_location_enabled";   // "true" | "false"
 
 export function useLocation() {
-  // consent: null = not asked yet, "granted" | "denied"
-  const [consent, setConsent]     = useState(() => localStorage.getItem(STORAGE_KEY));
-  const [district, setDistrict]   = useState(() => localStorage.getItem(DISTRICT_KEY) || "all");
-  const [detecting, setDetecting] = useState(false);
-  const [showBanner, setShowBanner] = useState(false);
+  const [consent,         setConsent]         = useState(() => localStorage.getItem(CONSENT_KEY));
+  const [detectedDistrict,setDetectedDistrict]= useState(() => localStorage.getItem(DISTRICT_KEY) || "all");
+  const [locationEnabled, setLocationEnabled] = useState(() => localStorage.getItem(ENABLED_KEY) !== "false");
+  const [detecting,       setDetecting]       = useState(false);
+  const [showBanner,      setShowBanner]       = useState(false);
 
-  // Show banner on first visit (consent === null)
+  // Show consent banner only on first visit (consent === null)
   useEffect(() => {
     if (consent === null) {
-      // Small delay so the page loads first
       const t = setTimeout(() => setShowBanner(true), 800);
       return () => clearTimeout(t);
     }
   }, [consent]);
+
+  // The district we actually expose: only apply it when locationEnabled is true
+  // When disabled, return "all" so the filter shows everything
+  const district = locationEnabled ? detectedDistrict : "all";
 
   const requestLocation = useCallback(() => {
     setShowBanner(false);
@@ -54,17 +58,18 @@ export function useLocation() {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         const { latitude, longitude } = pos.coords;
-        const found = coordsToDistrict(latitude, longitude);
+        const found    = coordsToDistrict(latitude, longitude);
         const resolved = found || "all";
-        setDistrict(resolved);
+        setDetectedDistrict(resolved);
         localStorage.setItem(DISTRICT_KEY, resolved);
-        localStorage.setItem(STORAGE_KEY, "granted");
+        localStorage.setItem(CONSENT_KEY,  "granted");
+        localStorage.setItem(ENABLED_KEY,  "true");
         setConsent("granted");
+        setLocationEnabled(true);
         setDetecting(false);
       },
       () => {
-        // User denied at browser level or error
-        localStorage.setItem(STORAGE_KEY, "denied");
+        localStorage.setItem(CONSENT_KEY, "denied");
         setConsent("denied");
         setDetecting(false);
       },
@@ -74,26 +79,42 @@ export function useLocation() {
 
   const denyLocation = useCallback(() => {
     setShowBanner(false);
-    localStorage.setItem(STORAGE_KEY, "denied");
+    localStorage.setItem(CONSENT_KEY, "denied");
     setConsent("denied");
-    setDistrict("all");
+    setDetectedDistrict("all");
   }, []);
 
+  // Toggle the auto-filter on or off without revoking consent or
+  // losing the detected district — so it can be re-enabled instantly.
+  const toggleLocation = useCallback(() => {
+    setLocationEnabled((prev) => {
+      const next = !prev;
+      localStorage.setItem(ENABLED_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  // Full reset — clears everything and shows the banner again
   const resetLocation = useCallback(() => {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(CONSENT_KEY);
     localStorage.removeItem(DISTRICT_KEY);
+    localStorage.removeItem(ENABLED_KEY);
     setConsent(null);
-    setDistrict("all");
+    setDetectedDistrict("all");
+    setLocationEnabled(true);
     setTimeout(() => setShowBanner(true), 100);
   }, []);
 
   return {
-    district,        // currently detected district ("all" if unknown)
-    consent,         // "granted" | "denied" | null
-    detecting,       // true while GPS is running
-    showBanner,      // whether to show the consent banner
+    district,           // "all" when disabled, detected district when enabled
+    detectedDistrict,   // always the raw detected value (useful for showing the pill)
+    consent,
+    locationEnabled,    // whether the auto-filter is currently active
+    detecting,
+    showBanner,
     requestLocation,
     denyLocation,
+    toggleLocation,     // toggle auto-filter on/off
     resetLocation,
   };
 }

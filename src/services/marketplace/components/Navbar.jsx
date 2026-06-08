@@ -141,25 +141,9 @@ export default function Navbar({
         {/* Right controls */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
 
-          {/* Language toggle */}
-          <div style={{ display: "flex", border: `1px solid ${C.line}`, borderRadius: 4, overflow: "hidden" }}>
-            {["en", "st"].map((l) => (
-              <button
-                key={l}
-                onClick={() => setLang(l)}
-                style={{
-                  padding: "5px 8px",
-                  background: lang === l ? C.green : "none",
-                  border: "none",
-                  color: lang === l ? "#fff" : C.inkMid,
-                  fontSize: 11, cursor: "pointer", fontFamily: F.body,
-                  transition: "background 0.15s",
-                }}
-              >
-                {l.toUpperCase()}
-              </button>
-            ))}
-          </div>
+          {/* Language toggle hidden — English only for now.
+               To restore: add the EN/ST button group back here.
+               Translations are still fully wired in translations.js */}
 
           {/* My Orders button */}
           <button

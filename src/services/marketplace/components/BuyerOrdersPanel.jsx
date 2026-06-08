@@ -98,7 +98,6 @@ function OrderItem({ order, lang = "en" }) {
   return (
     <div style={{
       border: `1px solid ${C.line}`,
-      borderLeft: `4px solid ${info.color}`,
       borderRadius: 6, marginBottom: 10,
       background: C.white, overflow: "hidden",
     }}>

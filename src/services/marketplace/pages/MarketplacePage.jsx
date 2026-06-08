@@ -29,8 +29,9 @@ export default function MarketplacePage() {
   const { lang, setLang, t, lf }                              = useLanguage("en");
   const { products, stats, loading, error, filters,
           setFilter, retry }                                   = useProducts();
-  const { district: geoDistrict, showBanner, detecting,
-          requestLocation, denyLocation }                      = useLocation();
+  const { district: geoDistrict, detectedDistrict, locationEnabled,
+          showBanner, detecting,
+          requestLocation, denyLocation, toggleLocation }      = useLocation();
   const { items: cartItems, total: cartTotal, itemCount,
           addItem, removeItem, updateQty, clearCart }          = useCart();
   const { view, navigate }                                     = useView("marketplace");
@@ -66,13 +67,16 @@ export default function MarketplacePage() {
     (o) => !["completed", "declined"].includes(o.status)
   ).length;
 
-  // ── Geolocation auto-filter ───────────────────────────────
+  // ── Geolocation auto-filter ─────────────────────────────────
+  // Apply geo district when enabled; reset to "all" when toggled off.
   useEffect(() => {
-    if (geoDistrict && geoDistrict !== "all") {
+    if (locationEnabled && geoDistrict && geoDistrict !== "all") {
       setFilter({ district: geoDistrict });
+    } else if (!locationEnabled) {
+      setFilter({ district: "all" });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [geoDistrict]);
+  }, [geoDistrict, locationEnabled]);
 
   const handleSearch    = ({ query, district }) => setFilter({ query, district });
   const handleAddToCart = (product, qty) => { addItem(product, qty); setModal(null); };
@@ -134,14 +138,26 @@ export default function MarketplacePage() {
                 Fresh from local farms,{" "}
                 <em style={{ fontStyle: "italic", color: C.greenMid }}>in your district.</em>
               </h2>
-              {geoDistrict && geoDistrict !== "all" && (
-                <div style={{
-                  display: "inline-flex", alignItems: "center", gap: 6,
-                  marginTop: 8, fontSize: 12, color: C.green,
-                  background: C.greenLight, padding: "4px 10px", borderRadius: 20,
-                }}>
-                  📍 {t("loc_detected")} {geoDistrict}
-                </div>
+              {detectedDistrict && detectedDistrict !== "all" && (
+                <button
+                  onClick={toggleLocation}
+                  title={locationEnabled ? "Click to show all districts" : "Click to filter by your location"}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    marginTop: 8, fontSize: 12,
+                    color:      locationEnabled ? C.green : C.inkLight,
+                    background: locationEnabled ? C.greenLight : C.bg,
+                    border:     `1px solid ${locationEnabled ? C.green : C.line}`,
+                    padding: "4px 10px", borderRadius: 20,
+                    cursor: "pointer", fontFamily: THEME.fonts.body,
+                    transition: "all 0.2s",
+                  }}
+                >
+                  {locationEnabled ? "📍" : "🌐"}{" "}
+                  {locationEnabled
+                    ? `${detectedDistrict} : click to show all`
+                    : `Location filter off : click to use ${detectedDistrict}`}
+                </button>
               )}
             </div>
 
