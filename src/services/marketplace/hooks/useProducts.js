@@ -1,17 +1,15 @@
+// ---------------------------------------------------------------------------
+// useProducts.js — now calls the real API
+// ---------------------------------------------------------------------------
 import { useState, useEffect, useCallback } from "react";
 import { fetchProducts, fetchMarketplaceStats } from "../api/marketplace.api.js";
 
-/**
- * useProducts
- * Manages product list state: fetching, filtering, sorting, loading, error.
- * Components call setFilter/setSort; this hook owns the fetch lifecycle.
- */
 export function useProducts() {
-  const [products, setProducts]   = useState([]);
-  const [stats, setStats]         = useState(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState(null);
-  const [filters, setFiltersState] = useState({
+  const [products, setProducts]     = useState([]);
+  const [stats,    setStats]        = useState(null);
+  const [loading,  setLoading]      = useState(true);
+  const [error,    setError]        = useState(null);
+  const [filters,  setFiltersState] = useState({
     category: "all",
     district: "all",
     query:    "",
@@ -22,26 +20,25 @@ export function useProducts() {
     setLoading(true);
     setError(null);
     try {
-      const [{ products: data }, statsData] = await Promise.all([
+      const [result, statsData] = await Promise.all([
         fetchProducts(params),
         fetchMarketplaceStats(),
       ]);
-      setProducts(data);
+      // API returns { products, total, page } — extract the array
+      setProducts(result.products ?? result);
       setStats(statsData);
     } catch (err) {
-      setError(err.message ?? "Unknown error");
+      setError(err.message ?? "Could not load products");
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Initial load
   useEffect(() => {
     load(filters);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** Update one or more filter fields and refetch */
   const setFilter = useCallback((updates) => {
     setFiltersState((prev) => {
       const next = { ...prev, ...updates };
@@ -55,13 +52,9 @@ export function useProducts() {
   return { products, stats, loading, error, filters, setFilter, retry };
 }
 
-/**
- * useOrderSubmit
- * Manages the order submission lifecycle separately from product loading.
- */
 export function useOrderSubmit(submitFn) {
-  const [submitting, setSubmitting] = useState(false);
-  const [submitted, setSubmitted]   = useState(false);
+  const [submitting,  setSubmitting]  = useState(false);
+  const [submitted,   setSubmitted]   = useState(false);
   const [submitError, setSubmitError] = useState(null);
 
   const submit = useCallback(async (payload) => {
