@@ -1,0 +1,329 @@
+// ---------------------------------------------------------------------------
+// Khokahano Agri Systems — Database Schema
+// Run `npm run db:migrate` to apply changes to your database
+// Run `npm run db:studio` to open a visual database browser
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── ENUMS ────────────────────────────────────────────────────
+
+enum Role {
+  FARMER
+  BUYER
+  ADMIN
+}
+
+enum PoultryType {
+  BROILERS
+  LAYERS
+  INDIGENOUS
+  EGGS
+  FEED_AND_SUPPLIES
+}
+
+enum OrderStatus {
+  PENDING
+  ACCEPTED
+  PREPARING
+  READY
+  COMPLETED
+  DECLINED
+  ESCALATED
+}
+
+enum DeliveryMethod {
+  PICKUP
+  DELIVERY
+}
+
+enum PaymentMethod {
+  MPESA
+  ECOCASH
+  CARD
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum SubscriptionPlan {
+  BASIC      // M50/month
+  GROWTH     // M100/month
+  PREMIUM    // M150/month
+}
+
+enum SurveyGroupCategory {
+  GROUP_A  // Following recommended standards
+  GROUP_B  // Needs improvement in feeding
+  GROUP_C  // Needs improvement in vaccination
+  GROUP_D  // Needs improvement in housing
+}
+
+// ── USERS ────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  phone        String   @unique
+  passwordHash String
+  role         Role
+  firstName    String
+  lastName     String
+  district     String
+  village      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  isActive     Boolean  @default(true)
+
+  // Relations
+  farmer        Farmer?
+  buyer         Buyer?
+  admin         Admin?
+  notifications Notification[]
+
+  @@map("users")
+}
+
+// ── FARMER ───────────────────────────────────────────────────
+
+model Farmer {
+  id               String           @id @default(uuid())
+  userId           String           @unique
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farmName         String?
+  isVerified       Boolean          @default(false)
+  verifiedAt       DateTime?
+  subscription     SubscriptionPlan @default(BASIC)
+  subscriptionPaidUntil DateTime?
+  bio              String?
+  profilePhotoUrl  String?
+  avgResponseMins  Float?           // average order response time in minutes
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  // Relations
+  products   Product[]
+  orders     Order[]
+  survey     FarmerSurvey?
+  escalations Escalation[]
+
+  @@map("farmers")
+}
+
+// ── BUYER ────────────────────────────────────────────────────
+
+model Buyer {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  orders Order[]
+
+  @@map("buyers")
+}
+
+// ── ADMIN ────────────────────────────────────────────────────
+
+model Admin {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@map("admins")
+}
+
+// ── PRODUCTS ─────────────────────────────────────────────────
+
+model Product {
+  id              String      @id @default(uuid())
+  farmerId        String
+  farmer          Farmer      @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+  title           String
+  titleSt         String?     // Sesotho translation
+  description     String
+  descriptionSt   String?     // Sesotho translation
+  category        PoultryType
+  pricePerUnit    Float
+  currency        String      @default("LSL")
+  unit            String      // e.g. "per chick", "per tray (30)"
+  unitSt          String?     // Sesotho translation
+  stockQuantity   Int
+  minOrderQty     Int         @default(1)
+  isActive        Boolean     @default(true)
+  district        String
+  village         String?
+  images          ProductImage[]
+  rating          Float       @default(0)
+  reviewCount     Int         @default(0)
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  // Relations
+  orderItems OrderItem[]
+
+  @@map("products")
+}
+
+model ProductImage {
+  id        String  @id @default(uuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  isPrimary Boolean @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("product_images")
+}
+
+// ── ORDERS ───────────────────────────────────────────────────
+
+model Order {
+  id             String         @id @default(uuid())
+  buyerId        String
+  buyer          Buyer          @relation(fields: [buyerId], references: [id])
+  farmerId       String
+  farmer         Farmer         @relation(fields: [farmerId], references: [id])
+  status         OrderStatus    @default(PENDING)
+  deliveryMethod DeliveryMethod @default(PICKUP)
+  deliveryAddress String?
+  deliveryPhone  String?
+  paymentMethod  PaymentMethod
+  paymentStatus  PaymentStatus  @default(PENDING)
+  totalAmount    Float
+  currency       String         @default("LSL")
+  notes          String?
+  declineReason  String?
+  declineReasonKey String?
+
+  // Timestamps for each status change — used for analytics
+  placedAt       DateTime       @default(now())
+  acceptedAt     DateTime?
+  preparingAt    DateTime?
+  readyAt        DateTime?
+  completedAt    DateTime?
+  declinedAt     DateTime?
+  escalatedAt    DateTime?
+
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  // Relations
+  items       OrderItem[]
+  escalation  Escalation?
+  statusLogs  OrderStatusLog[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String  @id @default(uuid())
+  orderId     String
+  order       Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product @relation(fields: [productId], references: [id])
+  quantity    Int
+  unitPrice   Float
+  subtotal    Float
+
+  @@map("order_items")
+}
+
+// Audit trail — every status change is recorded with timestamp and who triggered it
+model OrderStatusLog {
+  id        String      @id @default(uuid())
+  orderId   String
+  order     Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus?
+  toStatus  OrderStatus
+  triggeredBy String?   // userId or "system" for auto-escalations
+  note      String?
+  createdAt DateTime    @default(now())
+
+  @@map("order_status_logs")
+}
+
+// ── ESCALATIONS ──────────────────────────────────────────────
+
+model Escalation {
+  id              String    @id @default(uuid())
+  orderId         String    @unique
+  order           Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  farmerId        String
+  farmer          Farmer    @relation(fields: [farmerId], references: [id])
+  escalatedAt     DateTime  @default(now())
+  isResolved      Boolean   @default(false)
+  resolvedAt      DateTime?
+  followUpNote    String?
+  resolvedBy      String?   // admin userId
+
+  @@map("escalations")
+}
+
+// ── NOTIFICATIONS ────────────────────────────────────────────
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // "order_placed", "order_accepted", "escalation", etc.
+  title     String
+  message   String
+  data      Json?    // any extra payload (orderId, etc.)
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}
+
+// ── FARMER SURVEY ────────────────────────────────────────────
+
+model FarmerSurvey {
+  id        String   @id @default(uuid())
+  farmerId  String   @unique
+  farmer    Farmer   @relation(fields: [farmerId], references: [id], onDelete: Cascade)
+
+  // Flock details
+  poultryTypes     PoultryType[]
+  totalBirds       Int?
+  broilerCount     Int?
+  layerCount       Int?
+  indigenousCount  Int?
+
+  // Practices
+  housingSystem    String?    // "deep litter", "cage", "free range", etc.
+  feedingMethod    String?
+  feedBrand        String?
+  vaccinationPractice String?
+  vaccinesUsed     String[]
+
+  // Challenges
+  diseaseChallenges    String[]
+  mortalityRatePercent Float?
+  marketAccessChallenges String?
+  packagingMethod      String?
+
+  // Grouping — set by the system after analysing responses
+  groupCategory    SurveyGroupCategory?
+  groupAssignedAt  DateTime?
+
+  completedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("farmer_surveys")
+}
