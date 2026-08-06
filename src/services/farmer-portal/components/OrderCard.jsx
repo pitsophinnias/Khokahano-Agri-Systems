@@ -26,7 +26,8 @@ function formatTime(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 function formatAge(ts) {
-  const totalMins = Math.floor((Date.now() - ts) / 60000);
+  const ms = typeof ts === "string" ? new Date(ts).getTime() : ts;
+  const totalMins = Math.floor((Date.now() - ms) / 60000);
   if (totalMins < 1)  return "just now";
   if (totalMins < 60) return `${totalMins}m ago`;
   const hrs  = Math.floor(totalMins / 60);
@@ -48,10 +49,24 @@ export default function OrderCard({ order, lang = "en", onUpdateStatus }) {
   const [actioning,     setActioning]     = useState(false);
   const [showDecline,   setShowDecline]   = useState(false);
 
-  const cfg     = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.pending;
-  const title   = typeof order.productTitle === "object" ? order.productTitle[lang] : order.productTitle;
+  // Normalise status to lowercase for STATUS_CONFIG lookup
+  const status  = (order.status ?? "pending").toLowerCase();
+  const cfg     = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
   const actions = cfg.actions ?? [];
-  const isPending = order.status === "pending" || order.status === "escalated";
+  const isPending = ["pending", "escalated"].includes(status);
+
+  // Handle both API shape (order.items[]) and legacy shape
+  const firstItem   = order.items?.[0];
+  const rawTitle    = firstItem?.productTitle ?? order.productTitle ?? {};
+  const title       = typeof rawTitle === "object" ? (rawTitle[lang] ?? rawTitle.en ?? "Order") : (rawTitle ?? "Order");
+  const productImage= firstItem?.productImage ?? order.productImage ?? "";
+  const qty         = firstItem?.quantity ?? order.qty ?? 0;
+  const unitPrice   = firstItem?.unitPrice ?? order.unitPrice ?? 0;
+  const total       = order.totalAmount ?? order.total ?? 0;
+  const buyerName   = order.buyer?.name ?? "Customer";
+  const buyerPhone  = order.buyer?.phone ?? "";
+  const buyerDistrict = order.buyer?.district ?? "";
+  const buyerVillage  = order.buyer?.village ?? "";
 
   const handleAction = async (actionKey) => {
     if (actionKey === "decline") { setShowDecline(true); return; }
@@ -73,7 +88,10 @@ export default function OrderCard({ order, lang = "en", onUpdateStatus }) {
     <>
       <div style={{
         background: C.white,
-        border: `1px solid ${order.status === "escalated" ? "#ef9a9a" : C.line}`,
+        borderTop:    `1px solid ${order.status === "escalated" ? "#ef9a9a" : C.line}`,
+        borderRight:  `1px solid ${order.status === "escalated" ? "#ef9a9a" : C.line}`,
+        borderBottom: `1px solid ${order.status === "escalated" ? "#ef9a9a" : C.line}`,
+        borderLeft:   `1px solid ${order.status === "escalated" ? "#ef9a9a" : C.line}`,
         borderRadius: 6,
         overflow: "hidden",
       }}>
@@ -83,7 +101,7 @@ export default function OrderCard({ order, lang = "en", onUpdateStatus }) {
           onClick={() => setExpanded((v) => !v)}
         >
           <img
-            src={order.productImage}
+            src={productImage}
             alt={title}
             style={{ width: 52, height: 52, objectFit: "cover", borderRadius: 4, flexShrink: 0 }}
           />
@@ -103,16 +121,16 @@ export default function OrderCard({ order, lang = "en", onUpdateStatus }) {
               {title}
             </div>
             <div style={{ fontSize: 12, color: C.inkLight, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <span>👤 {order.buyer.name}</span>
+              <span>👤 {buyerName}</span>
               <span>{formatAge(order.placedAt)}</span>
             </div>
           </div>
 
           <div style={{ textAlign: "right", flexShrink: 0 }}>
             <div style={{ fontFamily: F.display, fontSize: 18, color: C.green }}>
-              M {order.total.toLocaleString()}
+              M {total.toLocaleString()}
             </div>
-            <div style={{ fontSize: 11, color: C.inkLight }}>{order.qty} units</div>
+            <div style={{ fontSize: 11, color: C.inkLight }}>{qty} units</div>
             <div style={{ fontSize: 14, color: C.inkLight, marginTop: 4 }}>{expanded ? "▲" : "▼"}</div>
           </div>
         </div>
@@ -123,15 +141,15 @@ export default function OrderCard({ order, lang = "en", onUpdateStatus }) {
             {/* Detail grid */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", background: C.bg }}>
               {[
-                ["Order ID",  `#${order.id.slice(-5).toUpperCase()}`],
+                ["Order ID", `#${order.id.slice(-5).toUpperCase()}`],
                 ["Placed",    formatTime(order.placedAt)],
-                ["Qty",       `${order.qty} × M ${order.unitPrice}`],
-                ["Total",     `M ${order.total.toLocaleString()}`],
-                ["Payment",   PAYMENT_ICONS[order.payment?.method] ?? "—"],
-                ["Delivery",  DELIVERY_ICONS[order.delivery?.method] ?? "—"],
+                ["Qty",       `${qty} × M ${unitPrice}`],
+                ["Total",     `M ${total.toLocaleString()}`],
+                ["Payment",   PAYMENT_ICONS[order.paymentMethod ?? order.payment?.method] ?? "—"],
+                ["Delivery",  DELIVERY_ICONS[order.deliveryMethod ?? order.delivery?.method] ?? "—"],
                 ...(order.acceptedAt  ? [["Accepted",  formatTime(order.acceptedAt)]]  : []),
                 ...(order.completedAt ? [["Completed", formatTime(order.completedAt)]] : []),
-                ...(order.declineReason ? [["Decline reason", order.declineReason]] : []),
+                ...(order.declineReason ? [["Decline reason", order.declineReason ?? ""]] : []),
               ].map(([k, v]) => (
                 <div key={k} style={{ padding: "10px 14px", borderRight: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}` }}>
                   <div style={{ fontSize: 10, color: C.inkLight, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 3 }}>{k}</div>
@@ -145,18 +163,18 @@ export default function OrderCard({ order, lang = "en", onUpdateStatus }) {
               <div style={{ fontSize: 11, color: C.inkLight, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Buyer</div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                 <div>
-                  <div style={{ fontSize: 14, fontWeight: 500, color: C.ink }}>{order.buyer.name}</div>
-                  <div style={{ fontSize: 12, color: C.inkLight }}>📍 {order.buyer.village}, {order.buyer.district}</div>
-                  {order.delivery?.method === "delivery" && (
-                    <div style={{ fontSize: 12, color: C.inkLight, marginTop: 2 }}>🚚 {order.delivery.address}</div>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: C.ink }}>{buyerName}</div>
+                  <div style={{ fontSize: 12, color: C.inkLight }}>📍 {buyerVillage}{buyerVillage ? ", " : ""}{buyerDistrict}</div>
+                  {(order.deliveryMethod ?? order.delivery?.method) === "DELIVERY" && (
+                    <div style={{ fontSize: 12, color: C.inkLight, marginTop: 2 }}>🚚 {order.deliveryAddress ?? order.delivery?.address}</div>
                   )}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <a href={`tel:${order.buyer.phone}`}
+                  <a href={`tel:${buyerPhone}`}
                     style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: C.green, color: "#fff", borderRadius: 4, fontSize: 12, fontWeight: 500, textDecoration: "none" }}>
                     📞 Call
                   </a>
-                  <a href={`https://wa.me/${order.buyer.phone.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer"
+                  <a href={`https://wa.me/${buyerPhone.replace(/\D/g,"")}`} target="_blank" rel="noopener noreferrer"
                     style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", background: "#128C7E", color: "#fff", borderRadius: 4, fontSize: 12, fontWeight: 500, textDecoration: "none" }}>
                     💬 WhatsApp
                   </a>

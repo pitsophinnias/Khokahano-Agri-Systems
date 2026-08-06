@@ -13,13 +13,17 @@ export function useOrderTimer(order) {
   const [remaining, setRemaining] = useState(null);
 
   useEffect(() => {
-    if (order.status !== "pending" && order.status !== "escalated") {
+    const s = (order.status ?? "").toLowerCase();
+    if (s !== "pending" && s !== "escalated") {
       setRemaining(null);
       return;
     }
 
     const tick = () => {
-      const age  = Date.now() - order.placedAt;
+      const placedMs = typeof order.placedAt === "string"
+        ? new Date(order.placedAt).getTime()
+        : order.placedAt;
+      const age  = Date.now() - placedMs;
       const left = ESCALATION_MS - age;
       setRemaining(left);
     };

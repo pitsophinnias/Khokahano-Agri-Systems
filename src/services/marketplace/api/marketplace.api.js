@@ -176,7 +176,8 @@ export async function fetchMyOrdersAsFarmer(params = {}) {
   const query = new URLSearchParams();
   if (params.status) query.set("status", params.status);
   if (params.page)   query.set("page",   params.page);
-  return apiFetch(`/api/orders/my/farmer?${query.toString()}`);
+  const qs = query.toString();
+  return apiFetch(`/api/orders/my/farmer${qs ? "?" + qs : ""}`);
 }
 
 /**

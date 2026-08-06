@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useAuthContext } from "../../auth/AuthContext.jsx";
 import { useNavigate } from "react-router-dom";
 import { useOrders }          from "../hooks/useOrders.js";
 import { useNotifications }   from "../hooks/useNotifications.js";
@@ -23,6 +24,7 @@ const TABS = [
 
 export default function FarmerDashboardPage({ lang = "en", onBack }) {
   const navigate = useNavigate();
+  const { user, logout, isFarmer } = useAuthContext();
   const [activeTab,  setActiveTab]  = useState("pending");
   const [subView,    setSubView]    = useState(null); // "history" | "alerts"
 
@@ -53,14 +55,17 @@ export default function FarmerDashboardPage({ lang = "en", onBack }) {
 
   const statKeys = { pending: "pending", active: "active", completed: "completed", all: null };
   const visibleOrders = orders
-    .filter((o) => TABS.find((t) => t.key === activeTab)?.statuses.includes(o.status))
+    .filter((o) => TABS.find((t) => t.key === activeTab)?.statuses.includes((o.status ?? "").toLowerCase()))
     .sort((a,b) => {
       const p = { escalated:0, pending:1 };
-      const pa = p[a.status]??2, pb = p[b.status]??2;
-      return pa !== pb ? pa - pb : a.placedAt - b.placedAt;
+      const pa = p[(a.status ?? "").toLowerCase()]??2;
+      const pb = p[(b.status ?? "").toLowerCase()]??2;
+      const aPlaced = new Date(a.placedAt).getTime();
+      const bPlaced = new Date(b.placedAt).getTime();
+      return pa !== pb ? pa - pb : aPlaced - bPlaced;
     });
 
-  const escalatedOrders = orders.filter((o) => o.status === STATUS.ESCALATED);
+  const escalatedOrders = orders.filter((o) => (o.status ?? "").toLowerCase() === STATUS.ESCALATED);
 
   return (
     <div style={{ fontFamily:F.body, background:C.bg, minHeight:"100vh", color:C.ink, WebkitFontSmoothing:"antialiased" }}>
@@ -70,7 +75,7 @@ export default function FarmerDashboardPage({ lang = "en", onBack }) {
           <button onClick={onBack ?? (() => navigate("/"))} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", width:32, height:32, borderRadius:4, cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>←</button>
           <div>
             <div style={{ fontFamily:F.display, fontSize:16, color:"#fff", lineHeight:1 }}>My Orders</div>
-            <div style={{ fontSize:10, color:"rgba(255,255,255,0.6)", marginTop:1 }}>{MOCK_FARMER.name} · {MOCK_FARMER.village}</div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.6)", marginTop:1 }}>{user ? `${user.firstName} ${user.lastName}` : "Farmer"}</div>
           </div>
         </div>
         <div style={{ display:"flex", gap:6, alignItems:"center" }}>
@@ -80,11 +85,17 @@ export default function FarmerDashboardPage({ lang = "en", onBack }) {
             </div>
           )}
           {/* Quick nav buttons */}
+          <button onClick={() => navigate("/farmer/listings")} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", padding:"6px 10px", borderRadius:4, fontSize:11, cursor:"pointer", fontFamily:F.body, whiteSpace:"nowrap" }}>
+            📦 Listings
+          </button>
           <button onClick={() => setSubView("history")} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", padding:"6px 10px", borderRadius:4, fontSize:11, cursor:"pointer", fontFamily:F.body, whiteSpace:"nowrap" }}>
             📊 History
           </button>
           <button onClick={() => setSubView("alerts")} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", padding:"6px 10px", borderRadius:4, fontSize:11, cursor:"pointer", fontFamily:F.body, whiteSpace:"nowrap" }}>
             🚨 Alerts
+          </button>
+          <button onClick={() => { logout(); navigate("/login"); }} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", padding:"6px 10px", borderRadius:4, fontSize:11, cursor:"pointer", fontFamily:F.body, whiteSpace:"nowrap" }}>
+            Sign out
           </button>
         </div>
       </div>

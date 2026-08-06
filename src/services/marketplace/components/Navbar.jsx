@@ -87,15 +87,12 @@ if (typeof document !== "undefined" && !document.getElementById("kh-nav-styles")
 }
 
 export default function Navbar({
-  lang,
-  setLang,
-  t,
-  view,
-  onNavigate,
-  cartCount,
-  onCartOpen,
-  orderCount,      // number of active buyer orders
-  onOrdersOpen,    // opens BuyerOrdersPanel
+  lang, setLang, t,
+  view, onNavigate,
+  cartCount, onCartOpen,
+  orderCount, onOrdersOpen,
+  user, isLoggedIn, isFarmer,
+  onLogin, onFarmerDash, onLogout,
 }) {
   const NAV_ITEMS = [
     { key: "marketplace", label: t("nav_marketplace") },
@@ -140,6 +137,24 @@ export default function Navbar({
 
         {/* Right controls */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+
+          {/* Auth buttons */}
+          {isLoggedIn ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              {isFarmer && (
+                <button onClick={onFarmerDash} style={{ background: "none", border: `1px solid ${C.line}`, padding: "6px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer", fontFamily: F.body, color: C.inkMid, whiteSpace: "nowrap" }}>
+                  My Farm
+                </button>
+              )}
+              <button onClick={onLogout} style={{ background: "none", border: `1px solid ${C.line}`, padding: "6px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer", fontFamily: F.body, color: C.inkMid }}>
+                Sign out
+              </button>
+            </div>
+          ) : (
+            <button onClick={onLogin} style={{ background: "none", border: `1px solid ${C.line}`, padding: "6px 10px", borderRadius: 4, fontSize: 11, cursor: "pointer", fontFamily: F.body, color: C.inkMid }}>
+              Sign in
+            </button>
+          )}
 
           {/* Language toggle hidden — English only for now.
                To restore: add the EN/ST button group back here.
