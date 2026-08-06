@@ -13,7 +13,7 @@ export const getMyOrdersAsBuyer = asyncHandler(async (req, res) => {
 
 export const getMyOrdersAsFarmer = asyncHandler(async (req, res) => {
   const { status, page, limit } = req.query;
-  const result = await OrdersService.getFarmerOrders(req.user.farmer.id, { status, page: +page, limit: +limit });
+  const result = await OrdersService.getFarmerOrders(req.user.farmer.id, { status, page, limit });
   res.json(result);
 });
 

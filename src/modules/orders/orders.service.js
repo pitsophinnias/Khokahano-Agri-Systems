@@ -188,7 +188,10 @@ export async function getOrderById(orderId) {
 }
 
 // ── FARMER'S ORDERS ───────────────────────────────────────────
-export async function getFarmerOrders(farmerId, { status, page = 1, limit = 30 } = {}) {
+export async function getFarmerOrders(farmerId, { status, page, limit } = {}) {
+  const safePage  = Math.max(1, parseInt(page)  || 1);
+  const safeLimit = Math.max(1, parseInt(limit) || 30);
+
   const where = {
     farmerId,
     ...(status && { status: status.toUpperCase() }),
@@ -198,8 +201,8 @@ export async function getFarmerOrders(farmerId, { status, page = 1, limit = 30 }
     prisma.order.findMany({
       where,
       orderBy: { placedAt: "desc" },
-      skip: (page - 1) * limit,
-      take: limit,
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
       include: {
         items: { include: { product: { include: { images: { where: { isPrimary: true }, take: 1 } } } } },
         buyer: { include: { user: { select: { firstName: true, lastName: true, phone: true, district: true, village: true } } } },
@@ -209,7 +212,7 @@ export async function getFarmerOrders(farmerId, { status, page = 1, limit = 30 }
     prisma.order.count({ where }),
   ]);
 
-  return { orders: orders.map(formatOrder), total, page, pages: Math.ceil(total / limit) };
+  return { orders: orders.map(formatOrder), total, page: safePage, pages: Math.ceil(total / safeLimit) };
 }
 
 // ── BUYER'S ORDERS ────────────────────────────────────────────
