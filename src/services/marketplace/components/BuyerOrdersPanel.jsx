@@ -35,8 +35,10 @@ const STATUS_INFO = {
 
 // Simple step progress bar
 const STEPS = ["pending", "accepted", "preparing", "ready", "completed"];
+const normalizeStatus = (s) => (s ?? "pending").toLowerCase();
 
-function ProgressBar({ status }) {
+function ProgressBar({ status: rawStatus }) {
+  const status = (rawStatus ?? "PENDING").toLowerCase();
   if (status === "declined") {
     return (
       <div style={{ padding: "8px 0", fontSize: 12, color: C.red }}>
@@ -44,7 +46,7 @@ function ProgressBar({ status }) {
       </div>
     );
   }
-  const currentIdx = STEPS.indexOf(status);
+  const currentIdx = STEPS.indexOf(normalizeStatus(status));
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 0, marginTop: 10 }}>
       {STEPS.map((step, i) => {
@@ -92,8 +94,17 @@ function ProgressBar({ status }) {
 }
 
 function OrderItem({ order, lang = "en" }) {
-  const title  = typeof order.productTitle === "object" ? order.productTitle[lang] : order.productTitle;
-  const info   = STATUS_INFO[order.status] ?? STATUS_INFO.pending;
+  // Support both real API shape (order.items[]) and legacy localStorage shape
+  const firstItem = order.items?.[0];
+  const rawTitle  = firstItem?.productTitle ?? order.productTitle;
+  const title     = typeof rawTitle === "object" ? (rawTitle[lang] ?? rawTitle.en) : (rawTitle ?? "Order");
+  const image     = firstItem?.productImage ?? order.productImage;
+  const qty       = firstItem?.quantity ?? order.qty;
+  const total     = order.totalAmount ?? order.total;
+
+  // Normalise status to lowercase for STATUS_INFO lookup
+  const statusKey = (order.status ?? "PENDING").toLowerCase();
+  const info      = STATUS_INFO[statusKey] ?? STATUS_INFO.pending;
 
   return (
     <div style={{
@@ -102,14 +113,17 @@ function OrderItem({ order, lang = "en" }) {
       background: C.white, overflow: "hidden",
     }}>
       <div style={{ display: "flex", gap: 10, padding: "12px 14px" }}>
-        <img
-          src={order.productImage}
-          alt={title}
-          style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 3, flexShrink: 0 }}
-        />
+        {image ? (
+          <img src={image} alt={title} style={{ width: 44, height: 44, objectFit: "cover", borderRadius: 3, flexShrink: 0 }} />
+        ) : (
+          <div style={{ width: 44, height: 44, background: "#f0f0f0", borderRadius: 3, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20 }}>🐔</div>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 500, color: C.ink, marginBottom: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {title}
+            {order.items?.length > 1 && (
+              <span style={{ fontSize: 11, color: C.inkLight }}> +{order.items.length - 1} more</span>
+            )}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 16 }}>{info.icon}</span>
@@ -122,8 +136,8 @@ function OrderItem({ order, lang = "en" }) {
           </div>
         </div>
         <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 14, fontWeight: 600, color: C.green }}>M {order.total?.toLocaleString()}</div>
-          <div style={{ fontSize: 10, color: C.inkLight }}>{order.qty} units</div>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.green }}>M {total?.toLocaleString()}</div>
+          <div style={{ fontSize: 10, color: C.inkLight }}>{qty} units</div>
         </div>
       </div>
 

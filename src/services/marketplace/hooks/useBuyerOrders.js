@@ -1,167 +1,81 @@
 // ---------------------------------------------------------------------------
 // useBuyerOrders.js
-// Buyer-side order tracking. Polls localStorage for status changes
-// (simulating real-time push from backend). When backend is ready,
-// replace polling with WebSocket or SSE.
+// Fetches buyer orders from the real backend every 5 seconds.
+// When a status changes since the last poll, fires onStatusChange.
+// Falls back to empty array if the user is not logged in.
 // ---------------------------------------------------------------------------
-
 import { useState, useEffect, useRef, useCallback } from "react";
+import { fetchMyOrdersAsBuyer, getToken } from "../api/marketplace.api.js";
 
-const BUYER_ORDERS_KEY = "kh_buyer_orders";
-const POLL_INTERVAL    = 3000; // ms — check for status updates every 3s
+const POLL_INTERVAL = 5000; // ms
 
 const STATUS_MESSAGES = {
-  accepted:  { en: "Your order has been accepted by the farmer! 🎉",     icon: "✅" },
-  preparing: { en: "The farmer is preparing your order. 🐔",              icon: "⚙️" },
-  ready:     { en: "Your order is ready! Arrange pickup or delivery. 📦", icon: "📦" },
-  completed: { en: "Your order has been completed. Thank you! 🙏",        icon: "✅" },
-  declined:  { en: "Your order was declined by the farmer.",              icon: "❌" },
+  ACCEPTED:  { en: "Your order has been accepted by the farmer! 🎉", icon: "✅" },
+  PREPARING: { en: "The farmer is preparing your order. 🐔",         icon: "⚙️" },
+  READY:     { en: "Your order is ready for pickup or delivery. 📦", icon: "📦" },
+  COMPLETED: { en: "Your order has been completed. Thank you! 🙏",   icon: "✅" },
+  DECLINED:  { en: "Your order was declined by the farmer.",         icon: "❌" },
+  ESCALATED: { en: "Your order has been escalated to Khokahano.",    icon: "⚠️" },
 };
 
-function loadBuyerOrders() {
-  try { return JSON.parse(localStorage.getItem(BUYER_ORDERS_KEY) || "[]"); } catch { return []; }
-}
+export function useBuyerOrders({ onStatusChange } = {}) {
+  const [orders,  setOrders]  = useState([]);
+  const lastStatuses = useRef({}); // { orderId: status }
 
-function saveBuyerOrders(orders) {
-  try { localStorage.setItem(BUYER_ORDERS_KEY, JSON.stringify(orders)); } catch {}
-}
-
-// ---------------------------------------------------------------------------
-// registerBuyerOrder
-// Called from CheckoutModal on successful checkout.
-// 1. Saves the order to the buyer's tracking list.
-// 2. Also injects the order into the farmer's order store (kh_farmer_orders)
-//    so the farmer sees it on their dashboard and the polling can match IDs.
-// ---------------------------------------------------------------------------
-export function registerBuyerOrder(order) {
-  // 1. Save to buyer tracking
-  const buyerExisting = loadBuyerOrders();
-  if (!buyerExisting.find((o) => o.id === order.id)) {
-    saveBuyerOrders([{ ...order, lastSeenStatus: "pending" }, ...buyerExisting]);
-  }
-
-  // 2. Inject into farmer orders so it shows up on the farmer dashboard
-  //    and polling can match by ID.
-  try {
-    const farmerOrdersKey = "kh_farmer_orders";
-    const farmerOrders = JSON.parse(localStorage.getItem(farmerOrdersKey) || "[]");
-    if (!farmerOrders.find((o) => o.id === order.id)) {
-      // Shape the order to match the farmer dashboard format
-      const farmerOrder = {
-        id:           order.id,
-        productId:    order.productId,
-        productTitle: order.productTitle,
-        productImage: order.productImage ?? "",
-        qty:          order.qty,
-        unitPrice:    order.unitPrice,
-        unit:         order.unit,
-        total:        order.total,
-        currency:     order.currency ?? "LSL",
-        status:       "pending",
-        placedAt:     order.placedAt ?? Date.now(),
-        buyer: {
-          name:     order.buyerName ?? "Customer",
-          phone:    order.delivery?.phone ?? "",
-          district: order.district  ?? "",
-          village:  order.delivery?.address ?? "",
-        },
-        delivery: order.delivery ?? { method: "pickup" },
-        payment:  order.payment  ?? { method: "unknown" },
-        notes:    order.notes    ?? "",
-      };
-      localStorage.setItem(farmerOrdersKey, JSON.stringify([farmerOrder, ...farmerOrders]));
+  const poll = useCallback(async () => {
+    if (!getToken()) {
+      setOrders([]);
+      return;
     }
-  } catch (e) {
-    console.error("Failed to inject order into farmer store:", e);
-  }
-}
+    try {
+      const fetched = await fetchMyOrdersAsBuyer();
+      const list    = Array.isArray(fetched) ? fetched : fetched.orders ?? [];
 
-export function useBuyerOrders({ onStatusChange }) {
-  const [orders, setOrders] = useState(loadBuyerOrders);
-  const lastStatuses = useRef({}); // { orderId: status } — track what we last showed
-
-  // Initialize last-seen from current order state
-  useEffect(() => {
-    orders.forEach((o) => {
-      lastStatuses.current[o.id] = o.lastSeenStatus ?? o.status;
-    });
-  }, []); // eslint-disable-line
-
-  // Poll farmer orders for status changes.
-  // Only writes to localStorage and updates state when something actually changed —
-  // prevents constant disk writes that fill up browser storage.
-  useEffect(() => {
-    const poll = () => {
-      try {
-        const farmerOrders = JSON.parse(localStorage.getItem("kh_farmer_orders") || "[]");
-        const buyerOrders  = loadBuyerOrders();
-
-        let statusChanged = false;
-        let newOrdersFound = false;
-
-        // Check for new orders not yet in state
-        const stateIds = new Set(ordersRef.current.map((o) => o.id));
-        buyerOrders.forEach((o) => { if (!stateIds.has(o.id)) newOrdersFound = true; });
-
-        const updated = buyerOrders.map((buyerOrder) => {
-          const farmerOrder = farmerOrders.find((fo) => fo.id === buyerOrder.id);
-          if (!farmerOrder) return buyerOrder;
-
-          const prevStatus = lastStatuses.current[buyerOrder.id] ?? buyerOrder.status;
-          const newStatus  = farmerOrder.status;
-
-          if (newStatus !== prevStatus) {
-            lastStatuses.current[buyerOrder.id] = newStatus;
-            const msg = STATUS_MESSAGES[newStatus];
-            if (msg && onStatusChange) {
-              onStatusChange({
-                orderId:       buyerOrder.id,
-                status:        newStatus,
-                message:       msg.en,
-                icon:          msg.icon,
-                declineReason: farmerOrder.declineReason,
-              });
-            }
-            statusChanged = true;
-            return {
-              ...buyerOrder,
-              status:         newStatus,
-              lastSeenStatus: newStatus,
-              declineReason:  farmerOrder.declineReason,
-              updatedAt:      Date.now(),
-            };
+      // Detect status changes since last poll
+      list.forEach((order) => {
+        const prev = lastStatuses.current[order.id];
+        const curr = order.status;
+        if (prev && prev !== curr && onStatusChange) {
+          const msg = STATUS_MESSAGES[curr];
+          if (msg) {
+            onStatusChange({
+              orderId:       order.id,
+              status:        curr,
+              message:       msg.en,
+              icon:          msg.icon,
+              declineReason: order.declineReason,
+            });
           }
-          return buyerOrder;
-        });
-
-        // Only write to localStorage and re-render when something changed
-        if (statusChanged) {
-          saveBuyerOrders(updated);
-          setOrders(updated);
-        } else if (newOrdersFound) {
-          // New orders registered since mount — update state only, no write needed
-          // (registerBuyerOrder already wrote them)
-          setOrders(buyerOrders);
         }
-      } catch (e) {
-        // Silently swallow storage errors — don't spam the console
-      }
-    };
+        lastStatuses.current[order.id] = curr;
+      });
 
-    const id = setInterval(poll, POLL_INTERVAL);
-    poll();
-    return () => clearInterval(id);
+      setOrders(list);
+    } catch {
+      // Silently fail — network hiccup shouldn't crash the UI
+    }
   }, [onStatusChange]);
 
-  // Keep a ref to current orders so the poll closure can read it without stale closure issues
-  const ordersRef = useRef([]);
-  useEffect(() => { ordersRef.current = orders; }, [orders]);
+  useEffect(() => {
+    poll(); // immediate first fetch
+    const id = setInterval(poll, POLL_INTERVAL);
+    return () => clearInterval(id);
+  }, [poll]);
+
+  // Active orders = anything not completed or declined
+  // Normalise to uppercase to handle both backend and legacy shapes
+  const activeOrderCount = orders.filter(
+    (o) => !["COMPLETED", "DECLINED"].includes((o.status ?? "").toUpperCase())
+  ).length;
 
   const clearCompleted = useCallback(() => {
-    const remaining = orders.filter((o) => !["completed", "declined"].includes(o.status));
-    saveBuyerOrders(remaining);
-    setOrders(remaining);
-  }, [orders]);
+    setOrders((prev) => prev.filter(
+      (o) => !["COMPLETED", "DECLINED"].includes((o.status ?? "").toUpperCase())
+    ));
+  }, []);
 
-  return { orders, clearCompleted };
+  return { orders, activeOrderCount, clearCompleted };
 }
+
+// No longer needed — kept for backward compatibility with any imports
+export function registerBuyerOrder() {}

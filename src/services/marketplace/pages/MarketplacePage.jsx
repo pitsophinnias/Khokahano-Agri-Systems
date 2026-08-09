@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { useAuthContext } from "../../auth/AuthContext.jsx";
+import { useNavigate } from "react-router-dom";
 import { THEME } from "../constants/theme.js";
 import { useProducts }     from "../hooks/useProducts.js";
 import { useLanguage }     from "../hooks/useLanguage.js";
@@ -26,6 +28,8 @@ import SubscribePage       from "./SubscribePage.jsx";
 const C = THEME.colors;
 
 export default function MarketplacePage() {
+  const { user, isLoggedIn, isFarmer, logout } = useAuthContext();
+  const routerNavigate = useNavigate();
   const { lang, setLang, t, lf }                              = useLanguage("en");
   const { products, stats, loading, error, filters,
           setFilter, retry }                                   = useProducts();
@@ -58,14 +62,9 @@ export default function MarketplacePage() {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  const { orders: buyerOrders, clearCompleted } = useBuyerOrders({
+  const { orders: buyerOrders, activeOrderCount, clearCompleted } = useBuyerOrders({
     onStatusChange: handleStatusChange,
   });
-
-  // Active order count — only non-terminal orders get a badge
-  const activeOrderCount = buyerOrders.filter(
-    (o) => !["completed", "declined"].includes(o.status)
-  ).length;
 
   // ── Geolocation auto-filter ─────────────────────────────────
   // Apply geo district when enabled; reset to "all" when toggled off.
@@ -100,6 +99,12 @@ export default function MarketplacePage() {
         onCartOpen={() => setCartOpen(true)}
         orderCount={activeOrderCount}
         onOrdersOpen={() => setOrdersOpen(true)}
+        user={user}
+        isLoggedIn={isLoggedIn}
+        isFarmer={isFarmer}
+        onLogin={() => routerNavigate("/login")}
+        onFarmerDash={() => routerNavigate("/farmer")}
+        onLogout={() => { logout(); routerNavigate("/"); }}
       />
 
       {/* ── Page views ── */}
@@ -155,8 +160,8 @@ export default function MarketplacePage() {
                 >
                   {locationEnabled ? "📍" : "🌐"}{" "}
                   {locationEnabled
-                    ? `${detectedDistrict} : click to show all`
-                    : `Location filter off : click to use ${detectedDistrict}`}
+                    ? `${detectedDistrict} — click to show all`
+                    : `Location filter off — click to use ${detectedDistrict}`}
                 </button>
               )}
             </div>

@@ -1,122 +1,412 @@
 // ---------------------------------------------------------------------------
 // marketplace.api.js
 //
-// This is the API boundary for the Marketplace microservice.
-// All data fetching goes through here — nothing in components touches
-// fetch/axios directly.
-//
-// HOW TO CONNECT THE REAL BACKEND:
-//   1. Set VITE_MARKETPLACE_API_URL in your .env file
-//   2. Replace each function body with the commented-out fetch block below it
-//   3. Keep the function signatures exactly the same — no component changes needed
+// All data fetching for the Marketplace microservice.
+// Now connected to the real backend API.
+// Base URL is set via VITE_API_URL in .env.local
 // ---------------------------------------------------------------------------
 
-import { MOCK_PRODUCTS, MOCK_STATS } from "../constants/mockData.js";
+const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
 
-const BASE_URL = import.meta.env?.VITE_MARKETPLACE_API_URL ?? "";
+// ── Auth token helpers ────────────────────────────────────────
+export function getToken() {
+  return localStorage.getItem("kh_token");
+}
 
-// Simulates network latency in dev so loading states are testable
-const fakeDelay = (ms = 600) => new Promise((r) => setTimeout(r, ms));
+export function setToken(token) {
+  localStorage.setItem("kh_token", token);
+}
+
+export function clearToken() {
+  localStorage.removeItem("kh_token");
+  localStorage.removeItem("kh_user");
+}
+
+export function getUser() {
+  try {
+    return JSON.parse(localStorage.getItem("kh_user") ?? "null");
+  } catch {
+    return null;
+  }
+}
+
+function setUser(user) {
+  localStorage.setItem("kh_user", JSON.stringify(user));
+}
+
+// ── Base fetch wrapper ────────────────────────────────────────
+async function apiFetch(path, options = {}) {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}${path}`, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers ?? {}),
+    },
+  });
+
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const err  = new Error(body.error ?? `Request failed: ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+
+  return res.json();
+}
 
 // ── PRODUCTS ──────────────────────────────────────────────────
 
 /**
  * Fetch product listings with optional filters.
- * @param {{ category?: string, district?: string, query?: string, sort?: string, page?: number, limit?: number }} params
- * @returns {Promise<{ products: Product[], total: number, page: number }>}
+ * @param {{ category?, district?, query?, sort?, page?, limit? }} params
  */
 export async function fetchProducts(params = {}) {
-  await fakeDelay();
+  const query = new URLSearchParams();
+  if (params.category && params.category !== "all") query.set("category", params.category);
+  if (params.district && params.district !== "all") query.set("district", params.district);
+  if (params.query)  query.set("q",     params.query);
+  if (params.sort)   query.set("sort",  params.sort);
+  if (params.page)   query.set("page",  params.page);
+  if (params.limit)  query.set("limit", params.limit);
 
-  // ── REAL IMPLEMENTATION (uncomment when backend is ready) ──
-  // const url = new URL(`${BASE_URL}/api/marketplace/products`);
-  // Object.entries(params).forEach(([k, v]) => v && url.searchParams.set(k, v));
-  // const res = await fetch(url);
-  // if (!res.ok) throw new Error(`Products fetch failed: ${res.status}`);
-  // return res.json();
-
-  // ── MOCK IMPLEMENTATION ────────────────────────────────────
-  let results = [...MOCK_PRODUCTS];
-
-  if (params.category && params.category !== "all") {
-    results = results.filter((p) => p.category === params.category);
-  }
-  if (params.district && params.district !== "all") {
-    results = results.filter((p) => p.district === params.district);
-  }
-  if (params.query) {
-    const q = params.query.toLowerCase();
-    results = results.filter(
-      (p) =>
-        p.title.en.toLowerCase().includes(q) ||
-        p.title.st.toLowerCase().includes(q) ||
-        p.farmer.name.en.toLowerCase().includes(q) ||
-        p.district.toLowerCase().includes(q)
-    );
-  }
-  if (params.sort === "price-asc")  results.sort((a, b) => a.price - b.price);
-  if (params.sort === "price-desc") results.sort((a, b) => b.price - a.price);
-  if (params.sort === "rating")     results.sort((a, b) => b.rating - a.rating);
-
-  return { products: results, total: results.length, page: 1 };
+  return apiFetch(`/api/products?${query.toString()}`);
 }
 
 /**
  * Fetch a single product by ID.
- * @param {string} productId
- * @returns {Promise<Product>}
  */
 export async function fetchProductById(productId) {
-  await fakeDelay(300);
-
-  // ── REAL ──
-  // const res = await fetch(`${BASE_URL}/api/marketplace/products/${productId}`);
-  // if (!res.ok) throw new Error(`Product not found: ${productId}`);
-  // return res.json();
-
-  const product = MOCK_PRODUCTS.find((p) => p.id === productId);
-  if (!product) throw new Error(`Product not found: ${productId}`);
-  return product;
+  return apiFetch(`/api/products/${productId}`);
 }
 
 // ── STATS ─────────────────────────────────────────────────────
 
 /**
- * Fetch marketplace summary stats shown in the stats strip.
- * @returns {Promise<{ totalFarmers: number, totalDistricts: number, totalListings: number, avgRating: number }>}
+ * Fetch marketplace summary stats.
  */
 export async function fetchMarketplaceStats() {
-  await fakeDelay(200);
+  try {
+    return await apiFetch("/api/products/stats");
+  } catch {
+    return { totalFarmers: 57, totalDistricts: 10, totalListings: 240, avgRating: 4.8 };
+  }
+}
 
-  // ── REAL ──
-  // const res = await fetch(`${BASE_URL}/api/marketplace/stats`);
-  // if (!res.ok) throw new Error("Stats fetch failed");
-  // return res.json();
+// ── AUTH ──────────────────────────────────────────────────────
 
-  return { ...MOCK_STATS };
+/**
+ * Register a new buyer account.
+ */
+export async function registerBuyer(data) {
+  const result = await apiFetch("/api/auth/register/buyer", {
+    method: "POST",
+    body:   JSON.stringify(data),
+  });
+  setToken(result.token);
+  setUser(result.user);
+  return result;
+}
+
+/**
+ * Register a new farmer account.
+ */
+export async function registerFarmer(data) {
+  const result = await apiFetch("/api/auth/register/farmer", {
+    method: "POST",
+    body:   JSON.stringify(data),
+  });
+  setToken(result.token);
+  setUser(result.user);
+  return result;
+}
+
+/**
+ * Login with email/phone and password.
+ */
+export async function login(identifier, password) {
+  const result = await apiFetch("/api/auth/login", {
+    method: "POST",
+    body:   JSON.stringify({ identifier, password }),
+  });
+  setToken(result.token);
+  setUser(result.user);
+  return result;
+}
+
+/**
+ * Logout — clears token and user from localStorage.
+ */
+export function logout() {
+  clearToken();
+}
+
+/**
+ * Get the currently authenticated user.
+ */
+export async function fetchMe() {
+  return apiFetch("/api/auth/me");
 }
 
 // ── ORDERS ────────────────────────────────────────────────────
 
 /**
- * Submit an order request.
- * This talks to the Order microservice, not Marketplace directly.
- * @param {{ productId: string, farmerId: string, quantity: number, buyerContact: string }} payload
- * @returns {Promise<{ orderId: string, status: string }>}
+ * Submit an order to the real backend.
  */
 export async function submitOrderRequest(payload) {
-  await fakeDelay(800);
+  return apiFetch("/api/orders", {
+    method: "POST",
+    body:   JSON.stringify(payload),
+  });
+}
 
-  // ── REAL (Order microservice endpoint, not Marketplace) ──
-  // const ORDER_API = import.meta.env.VITE_ORDER_API_URL;
-  // const res = await fetch(`${ORDER_API}/api/orders`, {
-  //   method: "POST",
-  //   headers: { "Content-Type": "application/json" },
-  //   body: JSON.stringify(payload),
-  // });
-  // if (!res.ok) throw new Error("Order submission failed");
-  // return res.json();
+/**
+ * Get all orders for the logged-in buyer.
+ */
+export async function fetchMyOrdersAsBuyer() {
+  return apiFetch("/api/orders/my/buyer");
+}
 
-  console.log("[mock] Order submitted:", payload);
-  return { orderId: `order_${Date.now()}`, status: "pending" };
+/**
+ * Get all orders for the logged-in farmer.
+ */
+export async function fetchMyOrdersAsFarmer(params = {}) {
+  const query = new URLSearchParams();
+  if (params.status) query.set("status", params.status);
+  if (params.page)   query.set("page",   params.page);
+  const qs = query.toString();
+  return apiFetch(`/api/orders/my/farmer${qs ? "?" + qs : ""}`);
+}
+
+/**
+ * Get farmer order stats.
+ */
+export async function fetchFarmerStats() {
+  return apiFetch("/api/orders/my/stats");
+}
+
+/**
+ * Update an order status (farmer action).
+ */
+export async function updateOrderStatus(orderId, status, extra = {}) {
+  return apiFetch(`/api/orders/${orderId}/status`, {
+    method: "PATCH",
+    body:   JSON.stringify({ status, ...extra }),
+  });
+}
+
+// ── FARMER PRODUCTS ───────────────────────────────────────────
+
+/**
+ * Get the logged-in farmer's own listings.
+ */
+export async function fetchMyListings() {
+  return apiFetch("/api/products/my/listings");
+}
+
+/**
+ * Create a new product listing (with image upload).
+ */
+export async function createProduct(formData) {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}/api/products`, {
+    method:  "POST",
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body:    formData, // FormData — don't set Content-Type, browser does it
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Failed to create product");
+  }
+  return res.json();
+}
+
+/**
+ * Update a product listing.
+ */
+export async function updateProduct(productId, data) {
+  return apiFetch(`/api/products/${productId}`, {
+    method: "PUT",
+    body:   JSON.stringify(data),
+  });
+}
+
+/**
+ * Update stock quantity for a product.
+ */
+export async function updateStock(productId, quantity) {
+  return apiFetch(`/api/products/${productId}/stock`, {
+    method: "PATCH",
+    body:   JSON.stringify({ quantity }),
+  });
+}
+
+/**
+ * Remove a product from the marketplace.
+ */
+export async function deleteProduct(productId) {
+  return apiFetch(`/api/products/${productId}`, { method: "DELETE" });
+}
+
+// ── NOTIFICATIONS ─────────────────────────────────────────────
+
+/**
+ * Get notifications for the logged-in user.
+ */
+export async function fetchNotifications({ unreadOnly = false } = {}) {
+  const query = unreadOnly ? "?unreadOnly=true" : "";
+  return apiFetch(`/api/notifications${query}`);
+}
+
+// ── SURVEYS ───────────────────────────────────────────────────
+
+/**
+ * Fetch the current farmer's existing survey response.
+ * Returns null if the farmer has not yet submitted a survey.
+ */
+export async function fetchMySurvey() {
+  try {
+    return await apiFetch("/api/surveys/my");
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * Submit (or update) the farmer's survey.
+ * Backend calls assignGroup() and returns the farmer's assigned group (A–D).
+ */
+export async function submitSurvey(payload) {
+  return apiFetch("/api/surveys", {
+    method: "POST",
+    body:   JSON.stringify(payload),
+  });
+}
+
+/**
+ * Admin — import survey rows from an external source (CSV, Google Sheets, WhatsApp).
+ * Each row is a mapped object with farmerPhone as the required key.
+ * @param {object[]} rows
+ * @returns {Promise<{ imported: number, skipped: number }>}
+ */
+export async function importSurveys(rows) {
+  return apiFetch("/api/surveys/import", {
+    method: "POST",
+    body:   JSON.stringify(rows),
+  });
+}
+
+// ── ADMIN ─────────────────────────────────────────────────────
+
+/**
+ * Get dashboard summary stats.
+ */
+export async function fetchAdminStats() {
+  return apiFetch("/api/admin/stats");
+}
+
+/**
+ * Get escalations. Pass resolved=true for resolved ones.
+ */
+export async function fetchAdminEscalations(resolved = false) {
+  return apiFetch(`/api/admin/escalations?resolved=${resolved}`);
+}
+
+/**
+ * Resolve an escalation with an optional follow-up note.
+ */
+export async function resolveEscalation(id, followUpNote = "") {
+  return apiFetch(`/api/admin/escalations/${id}/resolve`, {
+    method: "PATCH",
+    body:   JSON.stringify({ followUpNote }),
+  });
+}
+
+/**
+ * Get all farmers, optionally filtered by district.
+ */
+export async function fetchAdminFarmers(district) {
+  const qs = district ? `?district=${encodeURIComponent(district)}` : "";
+  return apiFetch(`/api/admin/farmers${qs}`);
+}
+
+/**
+ * Verify a farmer by their farmer ID.
+ */
+export async function verifyFarmer(farmerId) {
+  return apiFetch(`/api/admin/farmers/${farmerId}/verify`, { method: "PATCH" });
+}
+
+/**
+ * Get all orders with optional filters and pagination.
+ */
+export async function fetchAdminOrders({ status, district, page = 1 } = {}) {
+  const params = new URLSearchParams();
+  if (status)   params.set("status",   status);
+  if (district) params.set("district", district);
+  params.set("page", page);
+  return apiFetch(`/api/admin/orders?${params.toString()}`);
+}
+
+/**
+ * Get revenue totals grouped by district.
+ */
+export async function fetchRevenueByDistrict() {
+  return apiFetch("/api/admin/revenue-by-district");
+}
+
+/**
+ * Admin — get all survey responses with farmer details.
+ */
+export async function fetchAdminSurveys({ district, group } = {}) {
+  const params = new URLSearchParams();
+  if (district) params.set("district", district);
+  if (group)    params.set("group",    group);
+  return apiFetch(`/api/admin/surveys?${params.toString()}`);
+}
+
+/**
+ * Admin — get farmer counts per survey group.
+ */
+export async function fetchAdminSurveyGroups() {
+  return apiFetch("/api/admin/surveys/groups");
+}
+
+// ── FARMER PROFILE ────────────────────────────────────────────
+
+/**
+ * Get the logged-in farmer's full profile.
+ */
+export async function fetchFarmerProfile() {
+  return apiFetch("/api/farmers/me/profile");
+}
+
+/**
+ * Update the logged-in farmer's profile fields.
+ */
+export async function updateFarmerProfile(data) {
+  return apiFetch("/api/farmers/me/profile", {
+    method: "PUT",
+    body:   JSON.stringify(data),
+  });
+}
+
+/**
+ * Upload the farmer's profile photo.
+ * Accepts FormData with an "images" field (reuses Multer upload middleware).
+ */
+export async function uploadProfilePhoto(formData) {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}/api/farmers/me/photo`, {
+    method:  "POST",
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body:    formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Photo upload failed");
+  }
+  return res.json();
 }

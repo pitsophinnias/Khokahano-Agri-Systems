@@ -1,15 +1,14 @@
 import { useState, useCallback } from "react";
+import { useAuthContext } from "../../auth/AuthContext.jsx";
 import { useNavigate } from "react-router-dom";
 import { useOrders }          from "../hooks/useOrders.js";
 import { useNotifications }   from "../hooks/useNotifications.js";
-import { MOCK_FARMER }        from "../constants/mockOrders.js";
 import { STATUS }             from "../constants/orderStatuses.js";
 import StatsBar               from "../components/StatsBar.jsx";
 import OrderCard              from "../components/OrderCard.jsx";
 import EscalationBanner       from "../components/EscalationBanner.jsx";
 import NotificationToast      from "../components/NotificationToast.jsx";
 import OrderHistoryPage       from "./OrderHistoryPage.jsx";
-import KhokahanoAlertsPage    from "./KhokahanoAlertsPage.jsx";
 
 const C = { green:"#1c4a1c", white:"#ffffff", line:"#e2e0da", ink:"#1a1a18", inkLight:"#8a8a80", bg:"#f7f6f3", gold:"#f5c518" };
 const F = { display:"'Instrument Serif', Georgia, serif", body:"'Geist', system-ui, sans-serif" };
@@ -23,8 +22,9 @@ const TABS = [
 
 export default function FarmerDashboardPage({ lang = "en", onBack }) {
   const navigate = useNavigate();
-  const [activeTab,  setActiveTab]  = useState("pending");
-  const [subView,    setSubView]    = useState(null); // "history" | "alerts"
+  const { user, logout } = useAuthContext();
+  const [activeTab, setActiveTab] = useState("pending");
+  const [subView,   setSubView]   = useState(null); // "history" | "alerts"
 
   const { notifications, push, dismiss } = useNotifications();
 
@@ -49,28 +49,35 @@ export default function FarmerDashboardPage({ lang = "en", onBack }) {
 
   // Sub-views
   if (subView === "history") return <OrderHistoryPage orders={orders} lang={lang} onBack={() => setSubView(null)} />;
-  if (subView === "alerts")  return <KhokahanoAlertsPage onBack={() => setSubView(null)} />;
 
-  const statKeys = { pending: "pending", active: "active", completed: "completed", all: null };
   const visibleOrders = orders
-    .filter((o) => TABS.find((t) => t.key === activeTab)?.statuses.includes(o.status))
-    .sort((a,b) => {
+    .filter((o) => TABS.find((t) => t.key === activeTab)?.statuses.includes((o.status ?? "").toLowerCase()))
+    .sort((a, b) => {
       const p = { escalated:0, pending:1 };
-      const pa = p[a.status]??2, pb = p[b.status]??2;
-      return pa !== pb ? pa - pb : a.placedAt - b.placedAt;
+      const pa = p[(a.status ?? "").toLowerCase()] ?? 2;
+      const pb = p[(b.status ?? "").toLowerCase()] ?? 2;
+      const aPlaced = new Date(a.placedAt).getTime();
+      const bPlaced = new Date(b.placedAt).getTime();
+      return pa !== pb ? pa - pb : aPlaced - bPlaced;
     });
 
-  const escalatedOrders = orders.filter((o) => o.status === STATUS.ESCALATED);
+  const escalatedOrders = orders.filter((o) => (o.status ?? "").toLowerCase() === STATUS.ESCALATED);
 
   return (
     <div style={{ fontFamily:F.body, background:C.bg, minHeight:"100vh", color:C.ink, WebkitFontSmoothing:"antialiased" }}>
       {/* Top bar */}
       <div style={{ background:C.green, padding:"0 16px", height:52, display:"flex", alignItems:"center", justifyContent:"space-between", position:"sticky", top:0, zIndex:100 }}>
         <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-          <button onClick={onBack ?? (() => navigate("/"))} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", width:32, height:32, borderRadius:4, cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}>←</button>
+          <button
+            onClick={onBack ?? (() => navigate("/"))}
+            style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", width:32, height:32, borderRadius:4, cursor:"pointer", fontSize:16, display:"flex", alignItems:"center", justifyContent:"center" }}
+          >←</button>
+          <img src="/assets/logo.png" alt="Khokahano" style={{ width:32, height:32, borderRadius:"50%", objectFit:"cover" }} onError={(e) => { e.target.style.display="none"; }} />
           <div>
             <div style={{ fontFamily:F.display, fontSize:16, color:"#fff", lineHeight:1 }}>My Orders</div>
-            <div style={{ fontSize:10, color:"rgba(255,255,255,0.6)", marginTop:1 }}>{MOCK_FARMER.name} · {MOCK_FARMER.village}</div>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.6)", marginTop:1 }}>
+              {user ? `${user.firstName} ${user.lastName}` : "Farmer"}
+            </div>
           </div>
         </div>
         <div style={{ display:"flex", gap:6, alignItems:"center" }}>
@@ -79,12 +86,20 @@ export default function FarmerDashboardPage({ lang = "en", onBack }) {
               {stats.pending} pending
             </div>
           )}
-          {/* Quick nav buttons */}
+          <button onClick={() => navigate("/farmer/profile")} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", padding:"6px 10px", borderRadius:4, fontSize:11, cursor:"pointer", fontFamily:F.body, whiteSpace:"nowrap" }}>
+            👤 Profile
+          </button>
+          <button onClick={() => navigate("/farmer/listings")} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", padding:"6px 10px", borderRadius:4, fontSize:11, cursor:"pointer", fontFamily:F.body, whiteSpace:"nowrap" }}>
+            📦 Listings
+          </button>
           <button onClick={() => setSubView("history")} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", padding:"6px 10px", borderRadius:4, fontSize:11, cursor:"pointer", fontFamily:F.body, whiteSpace:"nowrap" }}>
             📊 History
           </button>
-          <button onClick={() => setSubView("alerts")} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", padding:"6px 10px", borderRadius:4, fontSize:11, cursor:"pointer", fontFamily:F.body, whiteSpace:"nowrap" }}>
-            🚨 Alerts
+          <button onClick={() => navigate("/farmer/survey")} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", padding:"6px 10px", borderRadius:4, fontSize:11, cursor:"pointer", fontFamily:F.body, whiteSpace:"nowrap" }}>
+            📋 Survey
+          </button>
+          <button onClick={() => { logout(); navigate("/login"); }} style={{ background:"rgba(255,255,255,0.12)", border:"none", color:"#fff", padding:"6px 10px", borderRadius:4, fontSize:11, cursor:"pointer", fontFamily:F.body, whiteSpace:"nowrap" }}>
+            Sign out
           </button>
         </div>
       </div>
@@ -95,7 +110,7 @@ export default function FarmerDashboardPage({ lang = "en", onBack }) {
       {/* Tab bar */}
       <div style={{ display:"flex", background:C.white, borderBottom:`1px solid ${C.line}`, overflow:"hidden" }}>
         {TABS.map((tab) => {
-          const count = orders.filter((o) => tab.statuses.includes(o.status)).length;
+          const count = orders.filter((o) => tab.statuses.includes((o.status ?? "").toLowerCase())).length;
           const isActive = activeTab === tab.key;
           return (
             <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{
@@ -135,8 +150,6 @@ export default function FarmerDashboardPage({ lang = "en", onBack }) {
             ))}
           </div>
         )}
-
-        {/* Dev reset button */}
         <div style={{ textAlign:"center", marginTop:32 }}>
           <button onClick={resetOrders} style={{ background:"none", border:`1px solid ${C.line}`, padding:"6px 14px", borderRadius:4, fontSize:11, color:C.inkLight, cursor:"pointer", fontFamily:F.body }}>
             ↺ Reset mock data

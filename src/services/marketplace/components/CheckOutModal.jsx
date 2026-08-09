@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { registerBuyerOrder } from "../hooks/useBuyerOrders.js";
+import { submitOrderRequest, getToken } from "../api/marketplace.api.js";
 import { THEME } from "../constants/theme.js";
 
 const C = THEME.colors;
@@ -410,42 +410,56 @@ export default function CheckoutModal({ items, total, lang, t, onClose, onSucces
   const [confirming, setConf]   = useState(false);
   const [confirmed, setConfirmed] = useState(false);
 
+  const [orderError, setOrderError] = useState("");
+
   const handleConfirm = async () => {
     setConf(true);
+    setOrderError("");
 
-    // ── REAL: POST to /api/orders ──
-    await new Promise((r) => setTimeout(r, 1500));
+    try {
+      // Check if buyer is logged in
+      if (!getToken()) {
+        setOrderError("You must be signed in to place an order. Please log in or register.");
+        setConf(false);
+        return;
+      }
 
-    // Register each cart item as a buyer order so the
-    // buyer can track status in the My Orders panel.
-    items.forEach((item) => {
-      const orderId = `order_${Date.now()}_${item.id}`;
-      registerBuyerOrder({
-        id:           orderId,
-        productId:    item.id,
-        productTitle: item.title,
-        productImage: item.image,
-        qty:          item.qty,
-        unitPrice:    item.price,
-        unit:         item.unit,
-        total:        item.price * item.qty,
-        currency:     "LSL",
-        status:       "pending",
-        placedAt:     Date.now(),
-        farmer:       item.farmer,
-        district:     item.district,
-        delivery:     delivery ?? { method: "pickup" },
-        payment:      payment  ?? { method: "unknown" },
-        notes:        "",
+      // Group cart items by farmer — backend requires one order per farmer
+      const byFarmer = {};
+      items.forEach((item) => {
+        const farmerId = item.farmer?.id ?? "unknown";
+        if (!byFarmer[farmerId]) byFarmer[farmerId] = [];
+        byFarmer[farmerId].push(item);
       });
-    });
 
-    setConf(false);
-    setConfirmed(true);
-    setTimeout(() => {
-      onSuccess(); // clears cart
-      onClose();
-    }, 3000);
+      // Submit one order per farmer
+      const orderPromises = Object.values(byFarmer).map((farmerItems) =>
+        submitOrderRequest({
+          items: farmerItems.map((item) => ({
+            productId: item.id,
+            quantity:  item.qty,
+          })),
+          deliveryMethod:  delivery?.method?.toUpperCase()  ?? "PICKUP",
+          deliveryAddress: delivery?.address ?? "",
+          deliveryPhone:   delivery?.phone   ?? "",
+          paymentMethod:   payment?.method?.toUpperCase()   ?? "MPESA",
+          notes: "",
+        })
+      );
+
+      await Promise.all(orderPromises);
+
+      setConf(false);
+      setConfirmed(true);
+      setTimeout(() => {
+        onSuccess(); // clears cart
+        onClose();
+      }, 3000);
+
+    } catch (err) {
+      setConf(false);
+      setOrderError(err.message ?? "Failed to place order. Please try again.");
+    }
   };
 
   return (
@@ -507,14 +521,25 @@ export default function CheckoutModal({ items, total, lang, t, onClose, onSucces
               />
             )}
             {step === "confirm" && (
-              <ConfirmStep
-                items={items} total={total} delivery={delivery} payment={payment}
-                lang={lang} t={t}
-                onBack={() => setStep("payment")}
-                onConfirm={handleConfirm}
-                confirming={confirming}
-                confirmed={confirmed}
-              />
+              <>
+                {orderError && (
+                  <div style={{
+                    background: "#ffebee", border: "1px solid #ef9a9a",
+                    borderRadius: 4, padding: "10px 14px",
+                    fontSize: 13, color: "#c62828", marginBottom: 14,
+                  }}>
+                    {orderError}
+                  </div>
+                )}
+                <ConfirmStep
+                  items={items} total={total} delivery={delivery} payment={payment}
+                  lang={lang} t={t}
+                  onBack={() => setStep("payment")}
+                  onConfirm={handleConfirm}
+                  confirming={confirming}
+                  confirmed={confirmed}
+                />
+              </>
             )}
           </div>
         </div>
