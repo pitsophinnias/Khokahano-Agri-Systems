@@ -1,6 +1,7 @@
-import { Router }  from "express";
+import { Router } from "express";
 import { authenticate, requireAdmin } from "../../middleware/auth.js";
 import { asyncHandler } from "../../middleware/errorHandler.js";
+import * as AdminService from "./admin.service.js";
 import prisma from "../../config/db.js";
 
 const router = Router();
@@ -9,25 +10,16 @@ const router = Router();
 router.use(authenticate, requireAdmin);
 
 // ── DASHBOARD STATS ───────────────────────────────────────────
+// Now delegates to AdminService so ordersByStatus is included
 router.get("/stats", asyncHandler(async (req, res) => {
-  const [farmers, buyers, products, orders, escalations] = await Promise.all([
-    prisma.farmer.count(),
-    prisma.buyer.count(),
-    prisma.product.count({ where: { isActive: true } }),
-    prisma.order.count(),
-    prisma.escalation.count({ where: { isResolved: false } }),
-  ]);
+  const stats = await AdminService.getDashboardStats();
+  res.json(stats);
+}));
 
-  const revenue = await prisma.order.aggregate({
-    where: { status: "COMPLETED" },
-    _sum: { totalAmount: true },
-  });
-
-  res.json({
-    farmers, buyers, products, orders,
-    openEscalations: escalations,
-    totalRevenue: revenue._sum.totalAmount ?? 0,
-  });
+// ── REVENUE BY DISTRICT ───────────────────────────────────────
+router.get("/revenue-by-district", asyncHandler(async (req, res) => {
+  const data = await AdminService.getRevenueByDistrict();
+  res.json(data);
 }));
 
 // ── ALL ESCALATIONS ───────────────────────────────────────────
@@ -86,6 +78,9 @@ router.patch("/farmers/:id/verify", asyncHandler(async (req, res) => {
 // ── ALL ORDERS ────────────────────────────────────────────────
 router.get("/orders", asyncHandler(async (req, res) => {
   const { status, district, page = 1, limit = 50 } = req.query;
+  // Pagination rule: always use parseInt with fallback
+  const safePage  = Math.max(1, parseInt(page)  || 1);
+  const safeLimit = Math.max(1, parseInt(limit) || 50);
   const where = {
     ...(status   && { status: status.toUpperCase() }),
     ...(district && { farmer: { user: { district } } }),
@@ -94,8 +89,8 @@ router.get("/orders", asyncHandler(async (req, res) => {
     prisma.order.findMany({
       where,
       orderBy: { placedAt: "desc" },
-      skip: (+page - 1) * +limit,
-      take: +limit,
+      skip: (safePage - 1) * safeLimit,
+      take: safeLimit,
       include: {
         buyer:  { include: { user: { select: { firstName: true, lastName: true, phone: true, district: true } } } },
         farmer: { include: { user: { select: { firstName: true, lastName: true, phone: true } } } },
@@ -104,7 +99,37 @@ router.get("/orders", asyncHandler(async (req, res) => {
     }),
     prisma.order.count({ where }),
   ]);
-  res.json({ orders, total, page: +page, pages: Math.ceil(total / +limit) });
+  res.json({ orders, total, page: safePage, pages: Math.ceil(total / safeLimit) });
+}));
+
+// ── SURVEYS ───────────────────────────────────────────────────
+// GET all surveys with farmer info — for the admin surveys tab
+router.get("/surveys", asyncHandler(async (req, res) => {
+  const { district, group } = req.query;
+  const surveys = await prisma.farmerSurvey.findMany({
+    where: {
+      ...(group    && { groupCategory: group }),
+      ...(district && { farmer: { user: { district } } }),
+    },
+    include: {
+      farmer: {
+        include: {
+          user: { select: { firstName: true, lastName: true, phone: true, district: true, village: true } },
+        },
+      },
+    },
+    orderBy: { updatedAt: "desc" },
+  });
+  res.json(surveys);
+}));
+
+// GET group breakdown — counts per group with top challenges
+router.get("/surveys/groups", asyncHandler(async (req, res) => {
+  const groups = await prisma.farmerSurvey.groupBy({
+    by:     ["groupCategory"],
+    _count: { farmerId: true },
+  });
+  res.json(groups.map((g) => ({ group: g.groupCategory, count: g._count.farmerId })));
 }));
 
 export default router;

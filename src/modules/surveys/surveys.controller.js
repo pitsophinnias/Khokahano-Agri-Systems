@@ -22,3 +22,12 @@ export const getGroupBreakdown = asyncHandler(async (req, res) => {
   const breakdown = await SurveysService.getGroupBreakdown();
   res.json(breakdown);
 });
+
+export const importSurveys = asyncHandler(async (req, res) => {
+  const rows = req.body;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return res.status(400).json({ error: "Request body must be a non-empty array of survey rows." });
+  }
+  const result = await SurveysService.importSurveys(rows);
+  res.json(result);
+});

@@ -4,12 +4,14 @@ import * as SurveysController from "./surveys.controller.js";
 
 const router = Router();
 
-// Farmer
-router.post("/",    authenticate, requireFarmer, SurveysController.submitSurvey);
-router.get( "/me",  authenticate, requireFarmer, SurveysController.getMySurvey);
+// ── Farmer routes ─────────────────────────────────────────────
+router.post("/",   authenticate, requireFarmer, SurveysController.submitSurvey);
+router.get( "/my", authenticate, requireFarmer, SurveysController.getMySurvey);
 
-// Admin
-router.get( "/",       authenticate, requireAdmin, SurveysController.getAllSurveys);
+// ── Admin routes ──────────────────────────────────────────────
+// Named routes must come before parameterised routes (route ordering rule)
+router.post("/import", authenticate, requireAdmin, SurveysController.importSurveys);
 router.get( "/groups", authenticate, requireAdmin, SurveysController.getGroupBreakdown);
+router.get( "/",       authenticate, requireAdmin, SurveysController.getAllSurveys);
 
 export default router;
