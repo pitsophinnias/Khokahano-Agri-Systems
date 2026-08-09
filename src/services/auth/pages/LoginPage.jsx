@@ -26,11 +26,10 @@ export default function LoginPage() {
     }
     try {
       const result = await login(identifier, password);
-      // Redirect based on role
       if (result.user.role === "FARMER") {
         navigate("/farmer");
       } else if (result.user.role === "ADMIN") {
-        navigate("/farmer/alerts");
+        navigate("/admin");
       } else {
         navigate("/");
       }

@@ -3,7 +3,7 @@
 //
 // All data fetching for the Marketplace microservice.
 // Now connected to the real backend API.
-// Base URL is set via VITE_MARKETPLACE_API_URL in .env.local
+// Base URL is set via VITE_API_URL in .env.local
 // ---------------------------------------------------------------------------
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:4000";
@@ -153,7 +153,6 @@ export async function fetchMe() {
 
 /**
  * Submit an order to the real backend.
- * Talks to the Order microservice endpoint.
  */
 export async function submitOrderRequest(payload) {
   return apiFetch("/api/orders", {
@@ -258,4 +257,156 @@ export async function deleteProduct(productId) {
 export async function fetchNotifications({ unreadOnly = false } = {}) {
   const query = unreadOnly ? "?unreadOnly=true" : "";
   return apiFetch(`/api/notifications${query}`);
+}
+
+// ── SURVEYS ───────────────────────────────────────────────────
+
+/**
+ * Fetch the current farmer's existing survey response.
+ * Returns null if the farmer has not yet submitted a survey.
+ */
+export async function fetchMySurvey() {
+  try {
+    return await apiFetch("/api/surveys/my");
+  } catch (err) {
+    if (err.status === 404) return null;
+    throw err;
+  }
+}
+
+/**
+ * Submit (or update) the farmer's survey.
+ * Backend calls assignGroup() and returns the farmer's assigned group (A–D).
+ */
+export async function submitSurvey(payload) {
+  return apiFetch("/api/surveys", {
+    method: "POST",
+    body:   JSON.stringify(payload),
+  });
+}
+
+/**
+ * Admin — import survey rows from an external source (CSV, Google Sheets, WhatsApp).
+ * Each row is a mapped object with farmerPhone as the required key.
+ * @param {object[]} rows
+ * @returns {Promise<{ imported: number, skipped: number }>}
+ */
+export async function importSurveys(rows) {
+  return apiFetch("/api/surveys/import", {
+    method: "POST",
+    body:   JSON.stringify(rows),
+  });
+}
+
+// ── ADMIN ─────────────────────────────────────────────────────
+
+/**
+ * Get dashboard summary stats.
+ */
+export async function fetchAdminStats() {
+  return apiFetch("/api/admin/stats");
+}
+
+/**
+ * Get escalations. Pass resolved=true for resolved ones.
+ */
+export async function fetchAdminEscalations(resolved = false) {
+  return apiFetch(`/api/admin/escalations?resolved=${resolved}`);
+}
+
+/**
+ * Resolve an escalation with an optional follow-up note.
+ */
+export async function resolveEscalation(id, followUpNote = "") {
+  return apiFetch(`/api/admin/escalations/${id}/resolve`, {
+    method: "PATCH",
+    body:   JSON.stringify({ followUpNote }),
+  });
+}
+
+/**
+ * Get all farmers, optionally filtered by district.
+ */
+export async function fetchAdminFarmers(district) {
+  const qs = district ? `?district=${encodeURIComponent(district)}` : "";
+  return apiFetch(`/api/admin/farmers${qs}`);
+}
+
+/**
+ * Verify a farmer by their farmer ID.
+ */
+export async function verifyFarmer(farmerId) {
+  return apiFetch(`/api/admin/farmers/${farmerId}/verify`, { method: "PATCH" });
+}
+
+/**
+ * Get all orders with optional filters and pagination.
+ */
+export async function fetchAdminOrders({ status, district, page = 1 } = {}) {
+  const params = new URLSearchParams();
+  if (status)   params.set("status",   status);
+  if (district) params.set("district", district);
+  params.set("page", page);
+  return apiFetch(`/api/admin/orders?${params.toString()}`);
+}
+
+/**
+ * Get revenue totals grouped by district.
+ */
+export async function fetchRevenueByDistrict() {
+  return apiFetch("/api/admin/revenue-by-district");
+}
+
+/**
+ * Admin — get all survey responses with farmer details.
+ */
+export async function fetchAdminSurveys({ district, group } = {}) {
+  const params = new URLSearchParams();
+  if (district) params.set("district", district);
+  if (group)    params.set("group",    group);
+  return apiFetch(`/api/admin/surveys?${params.toString()}`);
+}
+
+/**
+ * Admin — get farmer counts per survey group.
+ */
+export async function fetchAdminSurveyGroups() {
+  return apiFetch("/api/admin/surveys/groups");
+}
+
+// ── FARMER PROFILE ────────────────────────────────────────────
+
+/**
+ * Get the logged-in farmer's full profile.
+ */
+export async function fetchFarmerProfile() {
+  return apiFetch("/api/farmers/me/profile");
+}
+
+/**
+ * Update the logged-in farmer's profile fields.
+ */
+export async function updateFarmerProfile(data) {
+  return apiFetch("/api/farmers/me/profile", {
+    method: "PUT",
+    body:   JSON.stringify(data),
+  });
+}
+
+/**
+ * Upload the farmer's profile photo.
+ * Accepts FormData with an "images" field (reuses Multer upload middleware).
+ */
+export async function uploadProfilePhoto(formData) {
+  const token = getToken();
+  const res = await fetch(`${BASE_URL}/api/farmers/me/photo`, {
+    method:  "POST",
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body:    formData,
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.error ?? "Photo upload failed");
+  }
+  return res.json();
 }

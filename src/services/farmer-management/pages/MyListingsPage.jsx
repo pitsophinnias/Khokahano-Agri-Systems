@@ -2,6 +2,7 @@
 // MyListingsPage.jsx — farmer's product management dashboard
 // ---------------------------------------------------------------------------
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useMyListings } from "../hooks/useMyListings.js";
 import ProductFormModal from "../components/ProductFormModal.jsx";
 import { THEME } from "../../marketplace/constants/theme.js";
@@ -62,7 +63,8 @@ function StockEditor({ product, onUpdate }) {
   );
 }
 
-export default function MyListingsPage({ onBack }) {
+export default function MyListingsPage() {
+  const navigate = useNavigate();
   const { listings, loading, error, addListing, editListing, updateListingStock, removeListing } = useMyListings();
 
   const [showForm,    setShowForm]    = useState(false);
@@ -100,11 +102,12 @@ export default function MyListingsPage({ onBack }) {
       {/* Top bar */}
       <div style={{ background: C.green, padding: "0 16px", height: 52, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          {onBack && (
-            <button onClick={onBack} style={{ background: "rgba(255,255,255,0.12)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 4, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              ←
-            </button>
-          )}
+          <button
+            onClick={() => navigate("/farmer")}
+            style={{ background: "rgba(255,255,255,0.12)", border: "none", color: "#fff", width: 32, height: 32, borderRadius: 4, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            ←
+          </button>
           <div style={{ fontFamily: F.display, fontSize: 16, color: "#fff" }}>My Listings</div>
         </div>
         <button
@@ -170,7 +173,6 @@ export default function MyListingsPage({ onBack }) {
                           </div>
                         </div>
 
-                        {/* Actions */}
                         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                           <button
                             onClick={() => setEditProduct(product)}
@@ -187,7 +189,6 @@ export default function MyListingsPage({ onBack }) {
                         </div>
                       </div>
 
-                      {/* Stock editor */}
                       <div style={{ marginTop: 8 }}>
                         <span style={{ fontSize: 11, color: C.inkLight, marginRight: 8 }}>Stock:</span>
                         <StockEditor product={product} onUpdate={updateListingStock} />
@@ -201,7 +202,6 @@ export default function MyListingsPage({ onBack }) {
         )}
       </div>
 
-      {/* Add / Edit modal */}
       {(showForm || editProduct) && (
         <ProductFormModal
           product={editProduct}
@@ -211,7 +211,6 @@ export default function MyListingsPage({ onBack }) {
         />
       )}
 
-      {/* Delete confirmation */}
       {confirmDel && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 600, padding: 20 }}>
           <div style={{ background: C.white, borderRadius: 8, padding: 24, maxWidth: 360, width: "100%" }}>
